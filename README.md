@@ -36,7 +36,7 @@ Make sure Odin is installed and available from your terminal.
 Clone the repository:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/definitely-not-papers-please.git
+git clone https://github.com/beratdogan6/definitely-not-papers-please.git
 cd definitely-not-papers-please
 ```
 
