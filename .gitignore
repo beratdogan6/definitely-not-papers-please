@@ -1,0 +1,8 @@
+# Build output (odin build . defaults to a binary named after the directory)
+/definitely-not-papers-please
+*.exe
+*.pdb
+*.dSYM/
+
+# OS cruft
+.DS_Store
