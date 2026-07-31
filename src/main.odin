@@ -13,12 +13,16 @@ main :: proc() {
 	person_texture := rl.LoadTexture("assets/queue_person.png")
 	defer rl.UnloadTexture(person_texture)
 
+	customer_portrait_texture := rl.LoadTexture(CUSTOMER_PLACEHOLDER_PICTURE)
+	defer rl.UnloadTexture(customer_portrait_texture)
+
 	quadrants := build_quadrants(f32(SCREEN_WIDTH), f32(SCREEN_HEIGHT))
 	document := new_document(quadrants[.Docs].bounds)
 
 	dragging := false
 	drag_offset: rl.Vector2
 	queue_state := Queue_State{}
+	customer_state := Customer_State{}
 
 	for !rl.WindowShouldClose() { 	// Detect window close button or ESC key
 		mouse_pos := rl.GetMousePosition()
@@ -28,7 +32,7 @@ main :: proc() {
 				dragging = true
 				drag_offset = {mouse_pos.x - document.rect.x, mouse_pos.y - document.rect.y}
 			}
-			if can_call_next_customer(queue_state) && rl.CheckCollisionPointRec(mouse_pos, border_booth_interaction_rect(quadrants[.Border].bounds)) {
+			if can_call_next_customer(queue_state, customer_state) && rl.CheckCollisionPointRec(mouse_pos, border_booth_interaction_rect(quadrants[.Border].bounds)) {
 				call_next_customer(&queue_state)
 			}
 		}
@@ -40,7 +44,8 @@ main :: proc() {
 			document.rect.y = mouse_pos.y - drag_offset.y
 		}
 		document.rect = clamp_rect_to_bounds(document.rect, quadrants[.Docs].bounds)
-		update_queue_state(&queue_state, rl.GetFrameTime())
+		update_queue_state(&queue_state, &customer_state, rl.GetFrameTime())
+		update_customer_state(&customer_state, rl.GetFrameTime())
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.RAYWHITE)
@@ -53,6 +58,7 @@ main :: proc() {
 		}
 
 		draw_border_booth(quadrants[.Border].bounds, queue_state.next_shout_timer > 0)
+		draw_customer_room(quadrants[.Customer].bounds, customer_state, customer_portrait_texture)
 
 		QUEUE_SIZE :: 20
 		draw_queue(quadrants[.Line].bounds, person_texture, QUEUE_SIZE, &queue_state, border_booth_rect(quadrants[.Border].bounds))

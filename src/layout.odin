@@ -33,10 +33,8 @@ build_quadrants :: proc(screen_width, screen_height: f32) -> [Quadrant_Kind]Quad
 			label_color = rl.WHITE,
 		},
 		.Customer = {
-			bounds      = {0, split_y, split_x, screen_height - split_y},
-			color       = {85, 27, 24, 255}, // booth wood paneling
-			label       = "CUSTOMER",
-			label_color = rl.WHITE,
+			bounds = {0, split_y, split_x, screen_height - split_y},
+			color  = {85, 27, 24, 255}, // booth wood paneling, covered by draw_customer_room
 		},
 		.Docs = {
 			bounds      = {split_x, split_y, screen_width - split_x, screen_height - split_y},

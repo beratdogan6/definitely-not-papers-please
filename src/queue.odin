@@ -3,7 +3,6 @@ package main
 import rl "vendor:raylib"
 
 Queue_State :: struct {
-	has_customer:     bool,
 	advancing:        bool,
 	advance_t:        f32,
 	next_shout_timer: f32,
@@ -13,30 +12,31 @@ QUEUE_PERSON_SCALE :: f32(1.5)
 QUEUE_PERSON_SPACING :: f32(32)
 QUEUE_ADVANCE_DURATION :: f32(0.8)
 
-can_call_next_customer :: proc(state: Queue_State) -> bool {
-	return !state.has_customer && !state.advancing
+can_call_next_customer :: proc(queue: Queue_State, customer: Customer_State) -> bool {
+	return !customer_present(customer) && !queue.advancing
 }
 
-call_next_customer :: proc(state: ^Queue_State) {
-	state.advancing = true
-	state.advance_t = 0
-	state.next_shout_timer = 0.55
+call_next_customer :: proc(queue: ^Queue_State) {
+	queue.advancing = true
+	queue.advance_t = 0
+	queue.next_shout_timer = 0.55
 }
 
-update_queue_state :: proc(state: ^Queue_State, dt: f32) {
-	if state.next_shout_timer > 0 {
-		state.next_shout_timer -= dt
-		if state.next_shout_timer < 0 {
-			state.next_shout_timer = 0
+update_queue_state :: proc(queue: ^Queue_State, customer: ^Customer_State, dt: f32) {
+	if queue.next_shout_timer > 0 {
+		queue.next_shout_timer -= dt
+		if queue.next_shout_timer < 0 {
+			queue.next_shout_timer = 0
 		}
 	}
 
-	if state.advancing {
-		state.advance_t += dt / QUEUE_ADVANCE_DURATION
-		if state.advance_t >= 1 {
-			state.advancing = false
-			state.advance_t = 0
-			state.has_customer = true
+	if queue.advancing {
+		queue.advance_t += dt / QUEUE_ADVANCE_DURATION
+		if queue.advance_t >= 1 {
+			queue.advancing = false
+			queue.advance_t = 0
+			customer.current = next_roster_customer(customer)
+			customer.spawn_t = 0
 		}
 	}
 }
