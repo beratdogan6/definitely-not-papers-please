@@ -6,6 +6,17 @@ Document :: struct {
 	rect: rl.Rectangle,
 }
 
+Queue_State :: struct {
+	has_customer:     bool,
+	advancing:        bool,
+	advance_t:        f32,
+	next_shout_timer: f32,
+}
+
+QUEUE_PERSON_SCALE :: f32(1.5)
+QUEUE_PERSON_SPACING :: f32(32)
+QUEUE_ADVANCE_DURATION :: f32(0.8)
+
 Quadrant_Kind :: enum {
 	Line,
 	Border,
@@ -76,13 +87,19 @@ main :: proc() {
 
 	dragging := false
 	drag_offset: rl.Vector2
+	queue_state := Queue_State {}
 
 	for !rl.WindowShouldClose() { 	// Detect window close button or ESC key
 		mouse_pos := rl.GetMousePosition()
 
-		if rl.IsMouseButtonPressed(.LEFT) && rl.CheckCollisionPointRec(mouse_pos, document.rect) {
-			dragging = true
-			drag_offset = {mouse_pos.x - document.rect.x, mouse_pos.y - document.rect.y}
+		if rl.IsMouseButtonPressed(.LEFT) {
+			if rl.CheckCollisionPointRec(mouse_pos, document.rect) {
+				dragging = true
+				drag_offset = {mouse_pos.x - document.rect.x, mouse_pos.y - document.rect.y}
+			}
+			if can_call_next_customer(queue_state) && rl.CheckCollisionPointRec(mouse_pos, border_booth_interaction_rect(quadrants[.Border].bounds)) {
+				call_next_customer(&queue_state)
+			}
 		}
 		if rl.IsMouseButtonReleased(.LEFT) {
 			dragging = false
@@ -92,6 +109,7 @@ main :: proc() {
 			document.rect.y = mouse_pos.y - drag_offset.y
 		}
 		document.rect = clamp_rect_to_bounds(document.rect, docs_bounds)
+		update_queue_state(&queue_state, rl.GetFrameTime())
 
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.RAYWHITE)
@@ -103,10 +121,10 @@ main :: proc() {
 			}
 		}
 
-		draw_border_booth(quadrants[.Border].bounds)
+		draw_border_booth(quadrants[.Border].bounds, queue_state.next_shout_timer > 0)
 
 		QUEUE_SIZE :: 20
-		draw_queue(quadrants[.Line].bounds, person_texture, QUEUE_SIZE)
+		draw_queue(quadrants[.Line].bounds, person_texture, QUEUE_SIZE, &queue_state, border_booth_rect(quadrants[.Border].bounds))
 
 		rl.DrawRectangleRec(document.rect, DOCUMENT_COLOR)
 
@@ -133,15 +151,29 @@ clamp_rect_to_bounds :: proc(rect: rl.Rectangle, bounds: rl.Rectangle) -> rl.Rec
 	return clamped
 }
 
-draw_border_booth :: proc(bounds: rl.Rectangle) {
+border_booth_rect :: proc(bounds: rl.Rectangle) -> rl.Rectangle {
 	booth_width :: f32(126)
 	booth_height :: f32(74)
-	booth := rl.Rectangle {
+	return {
 		x = bounds.x - booth_width / 2,
 		y = bounds.y + bounds.height - booth_height - 12,
 		width = booth_width,
 		height = booth_height,
 	}
+}
+
+border_booth_interaction_rect :: proc(bounds: rl.Rectangle) -> rl.Rectangle {
+	booth := border_booth_rect(bounds)
+	return {
+		x = booth.x - 48,
+		y = booth.y - 40,
+		width = booth.width + 80,
+		height = booth.height + 46,
+	}
+}
+
+draw_border_booth :: proc(bounds: rl.Rectangle, shouting: bool) {
+	booth := border_booth_rect(bounds)
 
 	SHADOW :: rl.Color{58, 43, 39, 120}
 	ROOF :: rl.Color{46, 31, 29, 255}
@@ -163,6 +195,9 @@ draw_border_booth :: proc(bounds: rl.Rectangle) {
 	rl.DrawRectangleRec({booth.x + 12, booth.y + booth.height - 10, booth.width - 26, 5}, TRIM)
 
 	draw_megaphone({booth.x + 26, booth.y - 18})
+	if shouting {
+		draw_next_shout({booth.x - 58, booth.y - 54})
+	}
 }
 
 draw_megaphone :: proc(anchor: rl.Vector2) {
@@ -184,13 +219,51 @@ draw_megaphone :: proc(anchor: rl.Vector2) {
 	rl.DrawCircle(i32(anchor.x + 17), i32(anchor.y), 5, METAL_DARK)
 }
 
+
+draw_next_shout :: proc(pos: rl.Vector2) {
+	BUBBLE :: rl.Color{238, 225, 178, 255}
+	BORDER :: rl.Color{72, 49, 38, 255}
+	TEXT :: rl.Color{48, 31, 28, 255}
+
+	bubble := rl.Rectangle{pos.x, pos.y, 70, 26}
+	rl.DrawRectangleRec({bubble.x + 2, bubble.y + 2, bubble.width, bubble.height}, {48, 31, 28, 90})
+	rl.DrawRectangleRec(bubble, BUBBLE)
+	rl.DrawRectangleLinesEx(bubble, 2, BORDER)
+	rl.DrawText("NEXT!", i32(bubble.x + 10), i32(bubble.y + 6), 14, TEXT)
+}
+
 // Places people along one continuous snaking path so the queue reads as a line,
 // not as a set of evenly aligned grid cells.
-draw_queue :: proc(bounds: rl.Rectangle, texture: rl.Texture2D, count: int) {
-	SCALE :: 1.5
-	PERSON_SPACING :: 32
+draw_queue :: proc(bounds: rl.Rectangle, texture: rl.Texture2D, count: int, state: ^Queue_State, booth: rl.Rectangle) {
+	if state.advancing {
+		progress := smooth_step(state.advance_t)
+		new_customer_start := queue_spawn_position(bounds, texture, count)
+		new_customer_end := queue_slot_position(bounds, texture, count - 1)
+		draw_person(texture, lerp_vec2(new_customer_start, new_customer_end, progress))
 
-	person_size := f32(texture.width) * SCALE
+		for draw_index in 1 ..< count {
+			slot := count - draw_index
+			start := queue_slot_position(bounds, texture, slot)
+			end := queue_slot_position(bounds, texture, slot - 1)
+			draw_person(texture, lerp_vec2(start, end, progress))
+		}
+
+		front_start := queue_slot_position(bounds, texture, 0)
+		front_end := current_customer_position(booth, texture)
+		draw_person(texture, lerp_vec2(front_start, front_end, progress))
+		return
+	}
+
+	for draw_index in 0 ..< count {
+		slot := count - 1 - draw_index
+		draw_person(texture, queue_slot_position(bounds, texture, slot))
+	}
+
+	// Once a customer reaches the booth, they are considered inside the booth.
+}
+
+queue_slot_position :: proc(bounds: rl.Rectangle, texture: rl.Texture2D, slot: int) -> rl.Vector2 {
+	person_size := f32(texture.width) * QUEUE_PERSON_SCALE
 	margin_x := person_size * 1.1
 	margin_y := person_size * 0.75
 	left_x := bounds.x + margin_x
@@ -210,21 +283,85 @@ draw_queue :: proc(bounds: rl.Rectangle, texture: rl.Texture2D, count: int) {
 		{right_x - 54, top_y},
 	}
 
-	for draw_index in 0 ..< count {
-		i := count - 1 - draw_index
-		distance := f32(i) * PERSON_SPACING + f32((i % 4) - 1) * 2.5
-		if distance < 0 {
-			distance = 0
-		}
-
-		pos := point_on_queue_path(path[:], distance)
-		pos.x += f32((i % 3) - 1) * 4
-		pos.y += f32(((i + 1) % 3) - 1) * 3
-		pos.x -= person_size / 2
-		pos.y -= person_size / 2
-
-		rl.DrawTextureEx(texture, pos, 0, SCALE, rl.WHITE)
+	distance := f32(slot) * QUEUE_PERSON_SPACING + f32((slot % 4) - 1) * 2.5
+	if distance < 0 {
+		distance = 0
 	}
+
+	pos := point_on_queue_path(path[:], distance)
+	pos.x += f32((slot % 3) - 1) * 4
+	pos.y += f32(((slot + 1) % 3) - 1) * 3
+	pos.x -= person_size / 2
+	pos.y -= person_size / 2
+	return pos
+}
+
+queue_spawn_position :: proc(bounds: rl.Rectangle, texture: rl.Texture2D, count: int) -> rl.Vector2 {
+	pos := queue_slot_position(bounds, texture, count - 1)
+	pos.x = bounds.x - f32(texture.width) * QUEUE_PERSON_SCALE - 24
+	return pos
+}
+
+current_customer_position :: proc(booth: rl.Rectangle, texture: rl.Texture2D) -> rl.Vector2 {
+	person_size := f32(texture.width) * QUEUE_PERSON_SCALE
+	return {
+		booth.x - person_size * 0.65,
+		booth.y + booth.height - person_size - 4,
+	}
+}
+
+draw_person :: proc(texture: rl.Texture2D, pos: rl.Vector2) {
+	rl.DrawTextureEx(texture, pos, 0, QUEUE_PERSON_SCALE, rl.WHITE)
+}
+
+can_call_next_customer :: proc(state: Queue_State) -> bool {
+	return !state.has_customer && !state.advancing
+}
+
+call_next_customer :: proc(state: ^Queue_State) {
+	state.advancing = true
+	state.advance_t = 0
+	state.next_shout_timer = 0.55
+}
+
+update_queue_state :: proc(state: ^Queue_State, dt: f32) {
+	if state.next_shout_timer > 0 {
+		state.next_shout_timer -= dt
+		if state.next_shout_timer < 0 {
+			state.next_shout_timer = 0
+		}
+	}
+
+	if state.advancing {
+		state.advance_t += dt / QUEUE_ADVANCE_DURATION
+		if state.advance_t >= 1 {
+			state.advancing = false
+			state.advance_t = 0
+			state.has_customer = true
+		}
+	}
+}
+
+lerp_vec2 :: proc(start, end: rl.Vector2, amount: f32) -> rl.Vector2 {
+	return {
+		start.x + (end.x - start.x) * amount,
+		start.y + (end.y - start.y) * amount,
+	}
+}
+
+smooth_step :: proc(value: f32) -> f32 {
+	t := clamp_f32(value, 0, 1)
+	return t * t * (3 - 2 * t)
+}
+
+clamp_f32 :: proc(value, min_value, max_value: f32) -> f32 {
+	if value < min_value {
+		return min_value
+	}
+	if value > max_value {
+		return max_value
+	}
+	return value
 }
 
 point_on_queue_path :: proc(path: []rl.Vector2, distance: f32) -> rl.Vector2 {
