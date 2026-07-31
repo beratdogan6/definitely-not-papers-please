@@ -43,26 +43,36 @@ cd definitely-not-papers-please
 Run the project:
 
 ```bash
-odin run .
+./run.sh
 ```
 
-Build an executable:
+Build an executable (output goes to `bin/`):
 
 ```bash
-odin build . -out:definitely_not_papers_please
+./build.sh
 ```
+
+Both scripts just wrap the Odin toolchain (`odin run src`, `odin build src -out:bin/...`) and make sure they run from the repo root, since assets are loaded with paths relative to it.
 
 ## Project Structure
 
 ```text
 definitely-not-papers-please/
 ├── assets/
-├── main.odin
+├── src/
+│   ├── main.odin       # entry point: window setup, main loop
+│   ├── layout.odin     # quadrant layout and labels
+│   ├── document.odin   # the draggable document
+│   ├── queue.odin      # queue state, animation, and drawing
+│   ├── booth.odin      # border booth, megaphone, "NEXT!" bubble
+│   └── math_util.odin  # generic lerp/clamp/smoothstep helpers
+├── build.sh
+├── run.sh
 ├── README.md
 └── .gitignore
 ```
 
-The structure will grow as new systems and assets are added.
+All files under `src/` belong to the same Odin package (`package main`) — Odin packages are directory-based, so splitting a package across files is the idiomatic way to organize code, no cross-file imports needed. The structure will grow as new systems and assets are added.
 
 ## Disclaimer
 

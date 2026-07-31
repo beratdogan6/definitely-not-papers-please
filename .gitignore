@@ -1,5 +1,5 @@
-# Build output (odin build . defaults to a binary named after the directory)
-/definitely-not-papers-please
+# Build output
+/bin/
 *.exe
 *.pdb
 *.dSYM/
